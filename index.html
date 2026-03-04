@@ -2,7 +2,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ProCoach V115 - Cloud Fix</title>
+    <title>ProCoach V116 - Cloud Migration</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -68,9 +68,8 @@
         const auth = firebase.auth();
         const db = firebase.firestore();
 
-        // Habilitar persistência offline
         db.enablePersistence().catch((err) => {
-            console.warn("Firebase Offline Persistence Error:", err.code);
+            console.warn("Offline Persistence Error:", err.code);
         });
 
         // --- GLOBAL CONSTANTS ---
@@ -85,7 +84,6 @@
         // --- UTILS ---
         const showToast = (msg, color = '#333') => { const t = document.getElementById('toast'); if(t){ t.innerText = msg; t.style.backgroundColor = color; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 3000); } };
         const compressImage = (file, maxWidth=150, quality=0.5) => { return new Promise((resolve) => { const reader = new FileReader(); reader.readAsDataURL(file); reader.onload = (event) => { const img = new Image(); img.src = event.target.result; img.onload = () => { const elem = document.createElement('canvas'); const scaleFactor = maxWidth / img.width; elem.width = maxWidth; elem.height = img.height * scaleFactor; const ctx = elem.getContext('2d'); ctx.drawImage(img, 0, 0, elem.width, elem.height); resolve(elem.toDataURL('image/jpeg', quality)); }; }; }); };
-        const useStickyState = (defaultValue, key) => { const [value, setValue] = useState(() => { try { const stickyValue = window.localStorage.getItem(key); return stickyValue !== null ? JSON.parse(stickyValue) : defaultValue; } catch (e) { return defaultValue; } }); useEffect(() => { try { window.localStorage.setItem(key, JSON.stringify(value)); } catch (e) {} }, [key, value]); return [value, setValue]; };
         const getTodayStr = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().split('T')[0]; };
         const getDatesInRange = (startDate, daysBack) => { const dates = []; const end = new Date(startDate); for (let i = 0; i < daysBack; i++) { const d = new Date(end); d.setDate(end.getDate() - i); dates.push(d.toISOString().split('T')[0]); } return dates; };
         const formatDateBR = (dateString) => { if(!dateString) return '-'; const [y, m, d] = dateString.split('-'); return `${d}/${m}/${y}`; };
@@ -144,7 +142,7 @@
                     .then(() => onLogin())
                     .catch(err => {
                         console.error(err);
-                        setError('Acesso negado. Verifique a senha ou cadastre o e-mail no painel do Firebase.');
+                        setError('Acesso negado. Verifique a senha.');
                     });
             };
 
@@ -232,13 +230,26 @@
             );
         };
 
-        const SettingsModal = ({ show, onClose, themeColor, setThemeColor, header, setHeader, logo, setLogo }) => {
+        const SettingsModal = ({ show, onClose, themeColor, setThemeColor, header, setHeader, logo, setLogo, onExport, onImport }) => {
             if (!show) return null;
             const fileInputRef=useRef(null); const importInputRef=useRef(null);
             const handleLogoFile = async (e) => { const f=e.target.files[0]; if(f) { try{const c=await compressImage(f,200,0.6); setLogo(c); showToast("Atualizado!");}catch(e){} } };
-            const handleBackup = () => { try { const data={}; for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i); if(k.startsWith('pc_')) data[k]=localStorage.getItem(k);} const b=new Blob([JSON.stringify(data)],{type:"application/json"}); smartShare(b, `procoach_bkp_${new Date().toISOString().slice(0,10)}.json`, "Backup ProCoach"); } catch(e) { showToast("Erro ao criar backup"); } };
-            const handleRestore = (e) => { const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=(e)=>{try{const d=JSON.parse(e.target.result); Object.keys(d).forEach(k=>{if(k.startsWith('pc_')) localStorage.setItem(k,d[k]);}); window.location.reload();}catch(e){showToast("Erro no arquivo")}}; r.readAsText(f); };
-            return (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"><div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden relative"><div className="p-4 border-b dark:border-slate-700 flex justify-between items-center" style={{backgroundColor:themeColor}}><h2 className="text-white font-bold flex items-center gap-2"><Icon name="settings"/> CONFIG & BACKUP</h2><button onClick={onClose} className="text-white hover:bg-white/20 p-1 rounded"><Icon name="x"/></button></div><div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto"><div><h3 className="text-sm font-bold text-slate-400 uppercase mb-2">Identidade</h3><div className="flex items-center gap-4"><div className="w-20 h-20 rounded-full bg-slate-100 dark:bg-slate-700 border-2 flex items-center justify-center relative group cursor-pointer overflow-hidden" style={{borderColor:themeColor}}>{logo?<img src={logo} className="w-full h-full object-contain"/>:<Icon name="image" className="text-slate-300 dark:text-slate-500" size={30}/>}<input type="file" ref={fileInputRef} className="hidden" onChange={handleLogoFile}/><div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100" onClick={()=>fileInputRef.current.click()}><Icon name="folder" className="text-white"/></div></div><div className="flex-1"><label className="text-[10px] font-bold text-slate-500 dark:text-slate-400">NOME</label><BufferedInput className="w-full border-b-2 border-slate-200 dark:border-slate-600 py-1 font-bold text-lg outline-none bg-transparent dark:text-white" value={header.teamName || ''} onSave={val=>setHeader({...header, teamName:val})}/><BufferedInput className="w-full text-xs mt-1 border-b border-slate-100 dark:border-slate-700 p-1 bg-transparent dark:text-slate-300" placeholder="Ou cole URL da logo..." value={logo && logo.startsWith('http')?logo:''} onSave={val=>setLogo(val)}/></div></div></div><div><h3 className="text-sm font-bold text-slate-400 uppercase mb-2">Tema</h3><input type="color" value={themeColor} onChange={e=>setThemeColor(e.target.value)} className="w-12 h-12 rounded-lg border-2 cursor-pointer dark:border-slate-600"/></div><div className="border-t dark:border-slate-700 pt-4"><div className="grid grid-cols-2 gap-2 mb-2"><button onClick={handleBackup} className="flex justify-center gap-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 py-2 rounded font-bold text-xs"><Icon name="share" size={14}/> EXPORTAR TUDO</button><button onClick={()=>importInputRef.current.click()} className="flex justify-center gap-2 bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800 py-2 rounded font-bold text-xs"><Icon name="upload" size={14}/> IMPORTAR DADOS</button><input type="file" ref={importInputRef} className="hidden" accept=".json" onChange={handleRestore}/></div><p className="text-[10px] text-slate-400 text-center mb-2">Use exportar para salvar uma cópia local por segurança.</p></div></div></div></div>);
+            
+            const handleRestore = (e) => { 
+                const f=e.target.files[0]; if(!f)return; 
+                const r=new FileReader(); 
+                r.onload=(e)=>{
+                    try{
+                        const d=JSON.parse(e.target.result); 
+                        onImport(d);
+                        showToast("Dados Restaurados!");
+                        setTimeout(() => window.location.reload(), 1000);
+                    }catch(e){showToast("Erro no arquivo")}
+                }; 
+                r.readAsText(f); 
+            };
+
+            return (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"><div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden relative"><div className="p-4 border-b dark:border-slate-700 flex justify-between items-center" style={{backgroundColor:themeColor}}><h2 className="text-white font-bold flex items-center gap-2"><Icon name="settings"/> CONFIG & BACKUP</h2><button onClick={onClose} className="text-white hover:bg-white/20 p-1 rounded"><Icon name="x"/></button></div><div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto"><div><h3 className="text-sm font-bold text-slate-400 uppercase mb-2">Identidade</h3><div className="flex items-center gap-4"><div className="w-20 h-20 rounded-full bg-slate-100 dark:bg-slate-700 border-2 flex items-center justify-center relative group cursor-pointer overflow-hidden" style={{borderColor:themeColor}}>{logo?<img src={logo} className="w-full h-full object-contain"/>:<Icon name="image" className="text-slate-300 dark:text-slate-500" size={30}/>}<input type="file" ref={fileInputRef} className="hidden" onChange={handleLogoFile}/><div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100" onClick={()=>fileInputRef.current.click()}><Icon name="folder" className="text-white"/></div></div><div className="flex-1"><label className="text-[10px] font-bold text-slate-500 dark:text-slate-400">NOME</label><BufferedInput className="w-full border-b-2 border-slate-200 dark:border-slate-600 py-1 font-bold text-lg outline-none bg-transparent dark:text-white" value={header.teamName || ''} onSave={val=>setHeader({...header, teamName:val})}/><BufferedInput className="w-full text-xs mt-1 border-b border-slate-100 dark:border-slate-700 p-1 bg-transparent dark:text-slate-300" placeholder="Ou cole URL da logo..." value={logo && logo.startsWith('http')?logo:''} onSave={val=>setLogo(val)}/></div></div></div><div><h3 className="text-sm font-bold text-slate-400 uppercase mb-2">Tema</h3><input type="color" value={themeColor} onChange={e=>setThemeColor(e.target.value)} className="w-12 h-12 rounded-lg border-2 cursor-pointer dark:border-slate-600"/></div><div className="border-t dark:border-slate-700 pt-4"><div className="grid grid-cols-2 gap-2 mb-2"><button onClick={onExport} className="flex justify-center gap-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 py-2 rounded font-bold text-xs"><Icon name="share" size={14}/> EXPORTAR TUDO</button><button onClick={()=>importInputRef.current.click()} className="flex justify-center gap-2 bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800 py-2 rounded font-bold text-xs"><Icon name="upload" size={14}/> IMPORTAR DADOS</button><input type="file" ref={importInputRef} className="hidden" accept=".json" onChange={handleRestore}/></div><p className="text-[10px] text-slate-400 text-center mb-2">Use exportar para salvar uma cópia local por segurança.</p></div></div></div></div>);
         };
 
         const PlayerProfileModal = ({ player, playerIndex, logs, onClose, themeColor, setPlayers, players }) => {
@@ -425,6 +436,7 @@
             const [location, setLocation] = useState('');
             const [dateIn, setDateIn] = useState(getTodayStr());
             const [editingId, setEditingId] = useState(null); 
+            const [showEvolution, setShowEvolution] = useState(false);
             const records = Array.isArray(dmRecords) ? dmRecords : [];
             const activeInjuries = records.filter(r => r.status === 'Active');
             const commonDiagnoses = [ "Estiramento Posterior Coxa", "Estiramento Quadríceps", "Estiramento Adutor", "Estiramento Panturrilha", "Entorse Tornozelo", "Entorse Joelho", "Trauma Direto (Pancada)", "Edema Muscular", "Tendinite Patelar", "Tendinite Aquiles", "Pubalgia", "Contratura Muscular", "Fratura", "Luxação Ombro", "Desconforto Muscular", "Gripe / Virose", "Outro" ];
@@ -668,6 +680,7 @@
             );
         };
 
+        // --- MAIN APP COMPONENT (Handles logic with passed props) ---
         const MainApp = ({ user, initialData }) => {
             const [tab, setTab] = useState('match'); 
             
@@ -700,7 +713,6 @@
                 else document.body.classList.remove('dark');
             }, [darkMode]);
 
-            // OFFLINE/ONLINE LISTENER
             useEffect(() => {
                 const handleOnline = () => setIsOnline(true);
                 const handleOffline = () => setIsOnline(false);
@@ -712,7 +724,6 @@
                 };
             }, []);
 
-            // AUTO-SAVE TO FIRESTORE DEBOUNCED
             useEffect(() => {
                 if(!user) return;
                 const timeoutId = setTimeout(() => {
@@ -764,33 +775,14 @@
                 auth.signOut().then(() => { window.location.reload(); });
             };
 
-            const handleExportData = () => {
-                const data = { themeColor, players, trainingLog, assessments, dmRecords, matchMinutes, header, logo, darkMode, days };
-                const b = new Blob([JSON.stringify(data)], {type:"application/json"});
-                smartShare(b, `procoach_bkp_${getTodayStr()}.json`, "Backup ProCoach");
-            };
-
-            const handleImportData = (d) => {
-                if(d.themeColor) setThemeColor(d.themeColor);
-                if(d.players) setPlayers(d.players);
-                if(d.trainingLog) setTrainingLog(d.trainingLog);
-                if(d.assessments) setAssessments(d.assessments);
-                if(d.dmRecords) setDmRecords(d.dmRecords);
-                if(d.matchMinutes) setMatchMinutes(d.matchMinutes);
-                if(d.header) setHeader(d.header);
-                if(d.logo !== undefined) setLogo(d.logo);
-                if(d.darkMode !== undefined) setDarkMode(d.darkMode);
-                if(d.days) setDays(d.days);
-            };
-
             return (
                 <div className="flex flex-col h-full bg-slate-100 dark:bg-slate-900 transition-colors duration-300">
-                    <SettingsModal show={showSettings} onClose={()=>setShowSettings(false)} themeColor={themeColor} setThemeColor={setThemeColor} header={header} setHeader={setHeader} logo={logo} setLogo={setLogo} onExport={handleExportData} onImport={handleImportData} />
+                    <SettingsModal show={showSettings} onClose={()=>setShowSettings(false)} themeColor={themeColor} setThemeColor={setThemeColor} header={header} setHeader={setHeader} logo={logo} setLogo={setLogo} players={players} setPlayers={setPlayers} />
                     {showNotifications && <NotificationCenter alerts={activeAlerts} onClose={()=>setShowNotifications(false)} />}
                     
                     <div className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 p-2 px-4 flex justify-between items-center shadow-sm z-30 shrink-0 no-print transition-colors duration-300">
                         <div className="font-black text-xl italic text-slate-800 dark:text-white flex items-center gap-2">
-                            <div><span style={{color: themeColor}}>PRO</span>COACH <span className="text-[9px] not-italic bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-800 px-1.5 py-0.5 rounded ml-1">V115</span></div>
+                            <div><span style={{color: themeColor}}>PRO</span>COACH <span className="text-[9px] not-italic bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-800 px-1.5 py-0.5 rounded ml-1">V116</span></div>
                             <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold border ${isOnline ? 'bg-green-50 text-green-600 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' : 'bg-red-50 text-red-600 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800'}`}>
                                 <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-green-500' : 'bg-red-500'}`}></div>
                                 {isOnline ? 'ONLINE' : 'OFFLINE'}
@@ -822,6 +814,7 @@
             );
         };
 
+        // --- CLOUD WRAPPER (Fetches & Migrates) ---
         const CloudWrapper = ({ user }) => {
             const [initialData, setInitialData] = useState(null);
             const [loadingCloud, setLoadingCloud] = useState(true);
@@ -831,20 +824,48 @@
                     if (doc.exists) {
                         setInitialData(doc.data());
                     } else {
-                        setInitialData({});
+                        // NUVEM VAZIA: Tenta resgatar os dados do PC e mandar pra nuvem (MIGRAÇÃO)
+                        let localPlayers;
+                        try { localPlayers = JSON.parse(localStorage.getItem('pc_players')); } catch(e){}
+                        
+                        if (localPlayers && localPlayers.length > 0) {
+                            showToast("Migrando seus dados antigos para a nuvem...");
+                            const migratedData = {
+                                themeColor: JSON.parse(localStorage.getItem('pc_theme') || 'null'),
+                                players: localPlayers,
+                                trainingLog: JSON.parse(localStorage.getItem('pc_log') || 'null'),
+                                assessments: JSON.parse(localStorage.getItem('pc_assessments_v1') || 'null'),
+                                dmRecords: JSON.parse(localStorage.getItem('pc_dm_v1') || 'null'),
+                                matchMinutes: JSON.parse(localStorage.getItem('pc_minutes_v1') || 'null'),
+                                header: JSON.parse(localStorage.getItem('pc_header') || 'null'),
+                                logo: JSON.parse(localStorage.getItem('pc_logo') || 'null'),
+                                darkMode: JSON.parse(localStorage.getItem('pc_darkmode') || 'null'),
+                                days: JSON.parse(localStorage.getItem('pc_micro_v80') || 'null')
+                            };
+                            // Limpa campos nulos para não bugar o react
+                            Object.keys(migratedData).forEach(key => migratedData[key] === null && delete migratedData[key]);
+                            
+                            db.collection('coachData').doc(user.uid).set(migratedData).then(() => {
+                                setInitialData(migratedData);
+                            });
+                        } else {
+                            setInitialData({});
+                        }
                     }
                     setLoadingCloud(false);
                 }).catch(e => {
                     console.error("Cloud fetch error:", e);
+                    showToast("Iniciando modo Offline.");
                     setInitialData({});
                     setLoadingCloud(false);
                 });
             }, [user]);
 
-            if (loadingCloud) return <div className="flex flex-col h-screen w-screen items-center justify-center bg-slate-900 text-slate-300 font-bold"><Icon name="cloud" size={40} className="animate-bounce text-blue-500 mb-4"/>Sincronizando Banco de Dados...</div>;
+            if (loadingCloud) return <div className="flex flex-col h-screen w-screen items-center justify-center bg-slate-900 text-slate-300 font-bold"><Icon name="cloud" size={40} className="animate-bounce text-blue-500 mb-4"/>Conectando ao Banco de Dados...</div>;
             return <MainApp user={user} initialData={initialData} />;
         };
 
+        // --- ROOT APP (Auth) ---
         const RootApp = () => {
             const [user, setUser] = useState(null);
             const [loading, setLoading] = useState(true);

@@ -2,7 +2,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ProCoach V124 - Titanium Edition</title>
+    <title>ProCoach V125 - Purificador de Dados</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -42,6 +42,8 @@
         @media print { .no-print { display: none !important; } .page-break { page-break-inside: avoid; } body { background: white !important; color: black !important; -webkit-print-color-adjust: exact; } * { color: black !important; } #print-area { padding: 0; } .overflow-y-auto { overflow: visible !important; height: auto !important; } }
         #loading-state { display: flex; height: 100vh; width: 100vw; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; color: #64748b; flex-direction: column; gap: 10px; }
         #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 10px 20px; border-radius: 20px; z-index: 9999; display: none; font-size: 12px; font-weight: bold; white-space: nowrap; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .status-badge { position: absolute; top: 10px; right: 10px; background: #dcfce7; color: #166534; font-size: 10px; font-weight: bold; padding: 2px 8px; border-radius: 12px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+        .status-badge.show { opacity: 1; }
     </style>
 </head>
 <body class="h-screen w-screen overflow-hidden flex flex-col safe-area-inset">
@@ -51,20 +53,33 @@
     <script type="text/babel">
         const { useState, useEffect, useRef, useMemo } = React;
 
-        // --- ERROR BOUNDARY (BLINDAGEM TOTAL) ---
+        // --- ERROR BOUNDARY (FORMATAÇÃO TOTAL) ---
         class ErrorBoundary extends React.Component {
-            constructor(props) { super(props); this.state = { hasError: false }; }
+            constructor(props) { super(props); this.state = { hasError: false, resetting: false }; }
             static getDerivedStateFromError(error) { return { hasError: true }; }
             componentDidCatch(error, errorInfo) { console.error("ProCoach Error:", error, errorInfo); }
             
-            handleHardReset = () => {
-                localStorage.clear();
-                const user = firebase.auth().currentUser;
-                if (user) {
-                    firebase.firestore().collection('coachData').doc(user.uid).delete()
-                        .then(() => { window.location.reload(); })
-                        .catch(() => { window.location.reload(); });
-                } else { window.location.reload(); }
+            handleHardReset = async () => {
+                this.setState({ resetting: true });
+                try {
+                    localStorage.clear();
+                    const user = firebase.auth().currentUser;
+                    if (user) {
+                        // Força a formatação total do banco de dados na nuvem para apagar os fantasmas
+                        await firebase.firestore().collection('coachData').doc(user.uid).set({
+                            players: [{name: "Novo Atleta 1", image: null}],
+                            trainingLog: {},
+                            dmRecords: [],
+                            matchMinutes: {},
+                            assessments: {},
+                            days: []
+                        });
+                    }
+                    window.location.reload();
+                } catch (e) {
+                    console.error("Erro ao resetar:", e);
+                    window.location.reload();
+                }
             }
 
             render() {
@@ -74,10 +89,10 @@
                             <div className="w-20 h-20 bg-red-600 rounded-full flex items-center justify-center mb-4">
                                 <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                             </div>
-                            <h1 className="text-2xl font-bold mb-2">Erro de Nuvem Resolvido</h1>
-                            <p className="text-slate-400 mb-8 max-w-md">O aplicativo encontrou dados corrompidos. Clique abaixo para limpar o servidor e abrir o sistema limpo.</p>
-                            <button onClick={this.handleHardReset} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-xl shadow-lg uppercase tracking-wider">
-                                Limpar e Reiniciar
+                            <h1 className="text-2xl font-bold mb-2">Erro de Nuvem Detectado</h1>
+                            <p className="text-slate-400 mb-8 max-w-md">Os dados antigos estão travando o sistema novo. Clique no botão abaixo para formatar o banco de dados e resolver o problema de vez.</p>
+                            <button onClick={this.handleHardReset} disabled={this.state.resetting} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-xl shadow-lg uppercase tracking-wider flex items-center gap-2">
+                                {this.state.resetting ? "FORMATANDO A NUVEM..." : "LIMPAR E FORMATAR SISTEMA"}
                             </button>
                         </div>
                     );
@@ -95,11 +110,9 @@
             messagingSenderId: "999318121562",
             appId: "1:999318121562:web:1f192d4c0f14a64fb57c63"
         };
-
         if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
         const auth = firebase.auth();
         const db = firebase.firestore();
-
         db.enablePersistence().catch((err) => { console.warn("Offline Persistence Error:", err.code); });
 
         // --- UTILS & FUNÇÕES BLINDADAS ---
@@ -110,7 +123,6 @@
         const getDatesInRange = (startDate, daysBack) => { const dates = []; const end = new Date(startDate); for (let i = 0; i < daysBack; i++) { const d = new Date(end); d.setDate(end.getDate() - i); dates.push(d.toISOString().split('T')[0]); } return dates; };
         const formatDateBR = (dateString) => { if(!dateString) return '-'; const [y, m, d] = dateString.split('-'); return `${d}/${m}/${y}`; };
         
-        // As 3 funções que resolvem os crashes de Matemática
         const safeObj = (obj) => (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
         const safeArray = (arr, fallback=[]) => (Array.isArray(arr) && arr.length > 0) ? arr : fallback;
         const getWSum = (w) => {
@@ -118,6 +130,23 @@
                 return Object.values(w).reduce((a, b) => Number(a) + Number(b), 0) || 0;
             }
             return 0;
+        };
+
+        // O FILTRO PURIFICADOR: Limpa qualquer lixo da nuvem antes de chegar na tela
+        const sanitizeCloudData = (data) => {
+            if (!data || typeof data !== 'object') return {};
+            return {
+                themeColor: typeof data.themeColor === 'string' ? data.themeColor : '#1e3a8a',
+                players: safeArray(data.players).map(p => safeObj(p)),
+                trainingLog: safeObj(data.trainingLog),
+                assessments: safeObj(data.assessments),
+                dmRecords: safeArray(data.dmRecords),
+                matchMinutes: safeObj(data.matchMinutes),
+                header: safeObj(data.header),
+                logo: typeof data.logo === 'string' ? data.logo : null,
+                darkMode: !!data.darkMode,
+                days: safeArray(data.days)
+            };
         };
 
         const BufferedInput = ({ value, onSave, className, placeholder, type="text" }) => { const [localVal, setLocalVal] = useState(value); useEffect(() => setLocalVal(value), [value]); return (<input type={type} className={className} value={localVal} placeholder={placeholder} onChange={(e) => setLocalVal(e.target.value)} onBlur={() => { if(localVal !== value) onSave(localVal); }} />); };
@@ -208,7 +237,7 @@
             return (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"><div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden relative"><div className="p-4 border-b dark:border-slate-700 flex justify-between items-center" style={{backgroundColor:themeColor}}><h2 className="text-white font-bold flex items-center gap-2"><Icon name="settings"/> CONFIG & BACKUP</h2><button onClick={onClose} className="text-white hover:bg-white/20 p-1 rounded"><Icon name="x"/></button></div><div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto"><div><h3 className="text-sm font-bold text-slate-400 uppercase mb-2">Identidade</h3><div className="flex items-center gap-4"><div className="w-20 h-20 rounded-full bg-slate-100 dark:bg-slate-700 border-2 flex items-center justify-center relative group cursor-pointer overflow-hidden" style={{borderColor:themeColor}}>{logo?<img src={logo} className="w-full h-full object-contain"/>:<Icon name="image" className="text-slate-300 dark:text-slate-500" size={30}/>}<input type="file" ref={fileInputRef} className="hidden" onChange={handleLogoFile}/><div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100" onClick={()=>fileInputRef.current.click()}><Icon name="folder" className="text-white"/></div></div><div className="flex-1"><label className="text-[10px] font-bold text-slate-500 dark:text-slate-400">NOME</label><BufferedInput className="w-full border-b-2 border-slate-200 dark:border-slate-600 py-1 font-bold text-lg outline-none bg-transparent dark:text-white" value={header.teamName || ''} onSave={val=>setHeader({...header, teamName:val})}/><BufferedInput className="w-full text-xs mt-1 border-b border-slate-100 dark:border-slate-700 p-1 bg-transparent dark:text-slate-300" placeholder="Ou cole URL da logo..." value={logo && logo.startsWith('http')?logo:''} onSave={val=>setLogo(val)}/></div></div></div><div><h3 className="text-sm font-bold text-slate-400 uppercase mb-2">Tema</h3><input type="color" value={themeColor} onChange={e=>setThemeColor(e.target.value)} className="w-12 h-12 rounded-lg border-2 cursor-pointer dark:border-slate-600"/></div><div className="border-t dark:border-slate-700 pt-4"><div className="grid grid-cols-2 gap-2 mb-2"><button onClick={onExport} className="flex justify-center gap-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 py-2 rounded font-bold text-xs"><Icon name="share" size={14}/> EXPORTAR TUDO</button><button onClick={()=>importInputRef.current.click()} className="flex justify-center gap-2 bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800 py-2 rounded font-bold text-xs"><Icon name="upload" size={14}/> IMPORTAR DADOS</button><input type="file" ref={importInputRef} className="hidden" accept=".json" onChange={handleRestore}/></div><p className="text-[10px] text-slate-400 text-center mb-2">Use exportar para salvar uma cópia local por segurança.</p></div></div></div></div>);
         };
 
-        // --- DASHBOARD WELLNESS V124 (Medical Roster) ---
+        // --- DASHBOARD WELLNESS V125 (Medical Roster) ---
         const WellnessDashboard = ({ players, themeColor, trainingLog, setTrainingLog }) => {
             const [mode, setMode] = useState('dashboard');
             const [wellnessDate, setWellnessDate] = useState(getTodayStr()); 
@@ -352,6 +381,108 @@
                             <div className="space-y-4">{[{id:'sleep',label:'Qualidade do Sono (1=Excelente | 7=Péssimo)'},{id:'stress',label:'Estresse (1=Relaxado | 7=Estressado)'},{id:'fatigue',label:'Fadiga (1=Muita Energia | 7=Exausto)'},{id:'soreness',label:'Dor Muscular (1=Sem Dor | 7=Muita Dor)'}, {id:'mood', label:'Humor (1=Animado | 7=Irritado)'}].map(m=>(<div key={m.id}><div className="flex justify-between text-sm font-bold text-slate-700 dark:text-slate-300 mb-2"><span>{m.label}</span><span className="text-white px-2 rounded font-bold" style={{backgroundColor: themeColor}}>{localScores[m.id]}</span></div><input type="range" min="1" max="7" step="1" value={localScores[m.id]} onChange={(e)=>handleScoreChange(m.id, e.target.value)} className="hooper-slider" style={{background: `linear-gradient(to right, #22c55e, #eab308, #ef4444)`}}/></div>))}</div>
                             <div className="border-t dark:border-slate-700 pt-4"><h4 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">Local da Dor</h4><select className="w-full p-2 border dark:border-slate-600 rounded text-xs mb-2 bg-white dark:bg-slate-700 dark:text-white" onChange={(e)=>{if(e.target.value) togglePainZone(e.target.value); e.target.value='';}}><option value="">+ Adicionar Local</option>{bodyParts.map(p=><option key={p} value={p}>{p}</option>)}</select><div className="flex flex-wrap gap-1">{localPainZones.map(z=><span key={z} onClick={()=>togglePainZone(z)} className="bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400 px-2 py-1 rounded text-xs font-bold cursor-pointer hover:bg-red-200 dark:hover:bg-red-800">{z} ×</span>)}</div></div>
                             <div className="flex gap-2 mt-4"><button onClick={confirmData} className="w-full py-4 bg-slate-800 text-white font-bold rounded-xl shadow-lg hover:opacity-90 flex items-center justify-center gap-2"><Icon name="save"/> SALVAR DADOS</button></div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const PlayerProfileModal = ({ player, playerIndex, logs, onClose, themeColor, setPlayers, players }) => {
+            if (!player) return null;
+            const today = getTodayStr(); 
+            const currentLog = logs[today]?.[playerIndex] || {};
+            const wellness = safeObj(currentLog.wellness);
+            const dates = getDatesInRange(today, 7).reverse();
+            const toggleInjury = () => { const n = [...players]; n[playerIndex].injured = !n[playerIndex].injured; setPlayers(n); };
+            
+            const HistoryAI = () => {
+                const painCounts = {};
+                dates.forEach(d => { const l = logs[d]?.[playerIndex] || {}; if(Array.isArray(l.painZones)) l.painZones.forEach(z => { painCounts[z] = (painCounts[z]||0) + 1; }); });
+                const chronic = Object.keys(painCounts).find(k => painCounts[k] >= 3);
+                if (chronic) return (<div className="bg-red-50 dark:bg-red-900/30 border-l-4 border-red-500 p-3 mb-4 rounded-r-lg shadow-sm"><div className="flex items-center gap-2 mb-1"><Icon name="brain" className="text-red-600 dark:text-red-400" size={18}/><span className="text-xs font-bold text-red-700 dark:text-red-300 uppercase">Fisiologista Virtual</span></div><div className="text-xs text-slate-700 dark:text-slate-300">Atenção: Dor recorrente em <strong>{chronic}</strong> detectada nesta semana. Risco elevado.</div></div>);
+                return null;
+            };
+
+            const generateShareCard = async () => {
+                const el = document.getElementById('export-card-' + playerIndex);
+                if(!el) return;
+                el.style.left = '0'; el.style.top = '0'; 
+                try {
+                    const canvas = await html2canvas(el, {scale: 2, useCORS: true, backgroundColor: '#0f172a'});
+                    canvas.toBlob(blob => {
+                        smartShare(blob, `card_${player.name}.png`, `Status - ${player.name}`);
+                        el.style.left = '-9999px'; el.style.top = '-9999px';
+                    });
+                } catch(e) {
+                    showToast("Erro ao gerar card");
+                    el.style.left = '-9999px'; el.style.top = '-9999px';
+                }
+            };
+
+            const totalW = getWSum(wellness);
+            const wColor = totalW >= 25 ? 'text-red-500' : totalW >= 18 ? 'text-yellow-500' : 'text-green-500';
+
+            return (
+                <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+                    <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden relative flex flex-col max-h-[90vh]" onClick={e=>e.stopPropagation()}>
+                        
+                        <div className="p-6 relative text-white flex flex-col items-center shrink-0" style={{background:`linear-gradient(to bottom, ${themeColor}, #1e293b)`}}>
+                            <button onClick={onClose} className="absolute top-4 right-4 text-white/70 hover:text-white"><Icon name="x" size={24}/></button>
+                            <div className="w-32 h-32 rounded-full border-4 border-white dark:border-slate-700 bg-slate-200 dark:bg-slate-600 shadow-lg mb-2 overflow-hidden">{player.image?<img src={player.image} className="w-full h-full object-cover object-top" onError={(e)=>{e.target.style.display='none'}}/>:<div className="w-full h-full flex items-center justify-center text-slate-400"><Icon name="user" size={40}/></div>}</div>
+                            <h2 className="text-2xl font-bold uppercase">{player.name}</h2>
+                            <p className="text-white/70 text-sm font-bold">{player.number?`#${player.number} `:''} {player.position||'Atleta'}</p>
+                            <div className="flex gap-2 mt-2">
+                                <button onClick={toggleInjury} className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 ${player.injured?'bg-red-500 text-white':'bg-green-500 text-white'}`}>{player.injured?<><Icon name="medkit" size={12}/> LESIONADO</>:<><Icon name="check" size={12}/> DISPONÍVEL</>}</button>
+                            </div>
+                        </div>
+                        
+                        <div className="p-6 space-y-6 overflow-y-auto flex-1">
+                            <HistoryAI />
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase mb-3 flex items-center gap-2"><Icon name="smile"/> Status ({formatDateBR(today)})</h3>
+                                <div className="grid grid-cols-2 gap-4">{Object.entries({Sono:wellness.sleep,Estresse:wellness.stress,Fadiga:wellness.fatigue,Dor:wellness.soreness, Humor: wellness.mood}).map(([k,v])=>(<div key={k} className="bg-slate-50 dark:bg-slate-700 p-2 rounded border border-slate-100 dark:border-slate-600"><div className="flex justify-between text-xs font-bold mb-1"><span className="text-slate-500 dark:text-slate-400">{k}</span><span className="dark:text-white">{v||'-'}</span></div><div className="h-2 w-full bg-slate-200 dark:bg-slate-600 rounded-full overflow-hidden"><div className="h-full rounded-full transition-all duration-500" style={{width:`${((Number(v)||0)/7)*100}%`,backgroundColor:(Number(v)||0)>=5?'#ef4444':(Number(v)||0)>=3?'#eab308':'#22c55e'}}></div></div></div>))}</div>
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase mb-3 flex items-center gap-2"><Icon name="list"/> Histórico de Dores & Carga</h3>
+                                <div className="bg-slate-50 dark:bg-slate-700 rounded-xl border border-slate-100 dark:border-slate-600 overflow-hidden max-h-64 overflow-y-auto"><table className="w-full text-xs"><thead className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 sticky top-0"><tr><th className="p-2 text-left">Data</th><th className="p-2 text-center">Local Dor</th><th className="p-2 text-center">Carga</th></tr></thead><tbody>{dates.map(d=>{const l=logs[d]?.[playerIndex]||{};const t=(Number(l.rpe_am)||0)+(Number(l.rpe_pm)||0);const pz=Array.isArray(l.painZones) && l.painZones.length>0 ? l.painZones : null;return(<tr key={d} className="border-t border-slate-100 dark:border-slate-600"><td className="p-2 font-bold text-slate-600 dark:text-slate-300">{formatDateBR(d)}</td><td className="p-2 text-center">{pz ? <div className="flex flex-wrap gap-1 justify-center">{pz.map(z=><span key={z} className="bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400 px-1.5 py-0.5 rounded text-[9px] font-bold border border-red-200 dark:border-red-800">{z}</span>)}</div> : <span className="text-slate-300 dark:text-slate-500">-</span>}</td><td className="p-2 text-center font-bold text-blue-600 dark:text-blue-400">{t||'-'}</td></tr>)})}</tbody></table></div>
+                            </div>
+                            <button onClick={generateShareCard} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 shadow-lg"><Icon name="share"/> GERAR CARD (WHATSAPP)</button>
+                        </div>
+                    </div>
+
+                    {/* HIDDEN EXPORT DOM ELEMENT */}
+                    <div id={`export-card-${playerIndex}`} className="fixed z-[-1]" style={{left:'-9999px', top: '-9999px', width: '400px'}}>
+                        <div className="bg-slate-900 p-6 rounded-3xl border-4 border-slate-700 text-white flex flex-col items-center relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-full h-32 opacity-50" style={{background:`linear-gradient(to bottom, ${themeColor}, transparent)`}}></div>
+                            <div className="w-32 h-32 rounded-full border-4 border-slate-800 bg-slate-800 shadow-2xl mb-4 overflow-hidden z-10 relative">
+                                {player.image?<img src={player.image} className="w-full h-full object-cover object-top"/>:<div className="w-full h-full flex items-center justify-center text-slate-500"><Icon name="user" size={40}/></div>}
+                            </div>
+                            <h2 className="text-3xl font-black uppercase z-10 mb-1">{player.name}</h2>
+                            <p className="text-slate-400 font-bold z-10 mb-6 tracking-widest">{player.number?`#${player.number} `:''} {player.position||'Atleta'}</p>
+                            
+                            <div className="w-full bg-slate-800 rounded-xl p-4 mb-4 border border-slate-700 flex justify-between items-center z-10 shadow-inner">
+                                <div className="text-center">
+                                    <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">Wellness Index</div>
+                                    <div className={`text-3xl font-black ${wColor}`}>{totalW > 0 ? totalW : '-'}</div>
+                                </div>
+                                <div className="h-10 w-px bg-slate-700"></div>
+                                <div className="text-center">
+                                    <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">Carga Hoje</div>
+                                    <div className="text-3xl font-black text-blue-400">{(Number(currentLog.rpe_am)||0)+(Number(currentLog.rpe_pm)||0) || '-'}</div>
+                                </div>
+                            </div>
+                            
+                            <div className="w-full bg-slate-800 rounded-xl p-4 border border-slate-700 z-10">
+                                <div className="flex items-center gap-2 mb-2 border-b border-slate-700 pb-2">
+                                    <Icon name="brain" className="text-purple-400" size={16}/>
+                                    <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider">Fisiologista Virtual</span>
+                                </div>
+                                <div className="text-sm text-slate-300 leading-snug">
+                                    {totalW >= 25 ? "Alerta Crítico: Risco de Burnout ou Lesão." : totalW >= 18 ? "Atenção: Fadiga acumulada. Recuperação sugerida." : "Prontidão Alta: Atleta em boas condições."}
+                                    {Array.isArray(currentLog.painZones) && currentLog.painZones.length > 0 && <span className="block mt-1 text-red-400 font-bold text-xs">Dores: {currentLog.painZones.join(', ')}</span>}
+                                </div>
+                            </div>
+                            <div className="mt-4 text-[9px] text-slate-500 font-bold tracking-widest uppercase">Gerado por ProCoach Nuvem</div>
                         </div>
                     </div>
                 </div>
@@ -674,25 +805,17 @@
         // --- MAIN APP ---
         const MainApp = ({ user, initialData }) => {
             const [tab, setTab] = useState('squad'); 
-
+            
             const [themeColor, setThemeColor] = useState(initialData?.themeColor || '#1e3a8a');
-            const [players, setPlayers] = useState(safeArray(initialData?.players, [{name: "Jogador 1", image: null}, {name: "Jogador 2", image: null}]));
-            const [trainingLog, setTrainingLog] = useState(safeObj(initialData?.trainingLog));
-            const [assessments, setAssessments] = useState(safeObj(initialData?.assessments));
-            const [dmRecords, setDmRecords] = useState(safeArray(initialData?.dmRecords, []));
-            const [matchMinutes, setMatchMinutes] = useState(safeObj(initialData?.matchMinutes));
-            const [header, setHeader] = useState(safeObj(initialData?.header));
+            const [players, setPlayers] = useState(initialData?.players || []);
+            const [trainingLog, setTrainingLog] = useState(initialData?.trainingLog || {});
+            const [assessments, setAssessments] = useState(initialData?.assessments || {});
+            const [dmRecords, setDmRecords] = useState(initialData?.dmRecords || []);
+            const [matchMinutes, setMatchMinutes] = useState(initialData?.matchMinutes || {});
+            const [header, setHeader] = useState(initialData?.header || {});
             const [logo, setLogo] = useState(initialData?.logo || null);
             const [darkMode, setDarkMode] = useState(initialData?.darkMode || false);
-            const [days, setDays] = useState(safeArray(initialData?.days, [
-                { id: 1, md: 'MD-4', name: 'SEGUNDA', date:'', am: [], pm: [] },
-                { id: 2, md: 'MD-3', name: 'TERÇA', date:'', am: [], pm: [] },
-                { id: 3, md: 'MD-2', name: 'QUARTA', date:'', am: [], pm: [] },
-                { id: 4, md: 'MD-1', name: 'QUINTA', date:'', am: [], pm: [] },
-                { id: 5, md: 'JOGO', name: 'SEXTA', date:'', am: [], pm: [] },
-                { id: 6, md: 'MD+1', name: 'SÁBADO', date:'', am: [], pm: [] },
-                { id: 7, md: 'MD+2', name: 'DOMINGO', date:'', am: [], pm: [] }
-            ]));
+            const [days, setDays] = useState(initialData?.days || []);
 
             const [showSettings, setShowSettings] = useState(false);
             const [showNotifications, setShowNotifications] = useState(false);
@@ -753,7 +876,7 @@
                     {showNotifications && <NotificationCenter alerts={activeAlerts} onClose={()=>setShowNotifications(false)} />}
                     <div className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 p-2 px-4 flex justify-between items-center shadow-sm z-30 shrink-0 no-print transition-colors duration-300">
                         <div className="font-black text-xl italic text-slate-800 dark:text-white flex items-center gap-2">
-                            <div><span style={{color: themeColor}}>PRO</span>COACH <span className="text-[9px] not-italic bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-800 px-1.5 py-0.5 rounded ml-1">V124</span></div>
+                            <div><span style={{color: themeColor}}>PRO</span>COACH <span className="text-[9px] not-italic bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-800 px-1.5 py-0.5 rounded ml-1">V125</span></div>
                             <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold border ${isOnline ? 'bg-green-50 text-green-600 border-green-200' : 'bg-red-50 text-red-600 border-red-200'}`}><div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-green-500' : 'bg-red-500'}`}></div>{isOnline ? 'ONLINE' : 'OFFLINE'}</div>
                             {syncStatus && <span className="text-[9px] font-bold text-slate-400 animate-pulse">{syncStatus}</span>}
                         </div>
@@ -785,18 +908,22 @@
 
             useEffect(() => {
                 const unsubscribe = db.collection('coachData').doc(user.uid).onSnapshot(doc => {
-                    if (doc.exists) { setInitialData(doc.data()); } 
-                    else { setInitialData({}); }
+                    if (doc.exists) { 
+                        // O FILTRO É APLICADO AQUI! NADA DE LIXO PASSA.
+                        setInitialData(sanitizeCloudData(doc.data())); 
+                    } else { 
+                        setInitialData(sanitizeCloudData({})); 
+                    }
                     setLoadingCloud(false);
                 }, err => {
                     console.error("Cloud fetch error:", err);
-                    setInitialData({});
+                    setInitialData(sanitizeCloudData({}));
                     setLoadingCloud(false);
                 });
                 return () => unsubscribe();
             }, [user]);
 
-            if (loadingCloud) return <div className="flex flex-col h-screen w-screen items-center justify-center bg-slate-900 text-slate-300 font-bold"><Icon name="cloud" size={40} className="animate-bounce text-blue-500 mb-4"/>Sincronizando...</div>;
+            if (loadingCloud) return <div className="flex flex-col h-screen w-screen items-center justify-center bg-slate-900 text-slate-300 font-bold"><Icon name="cloud" size={40} className="animate-bounce text-blue-500 mb-4"/>Sincronizando Módulo Blindado...</div>;
             return <ErrorBoundary><MainApp user={user} initialData={initialData} /></ErrorBoundary>;
         };
 
